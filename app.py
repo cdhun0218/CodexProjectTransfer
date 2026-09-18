@@ -34,7 +34,7 @@ class App(tk.Tk):
         header = tk.Frame(self, bg="#163b35", padx=28, pady=22)
         header.pack(fill="x")
         tk.Label(header, text="Codex Project Transfer", bg="#163b35", fg="white", font=("Segoe UI", 23, "bold")).pack(anchor="w")
-        tk.Label(header, text="프로젝트와 대화를 한 묶음으로 · Windows 미리보기 버전 0.1", bg="#163b35", fg="#c0ded5", font=("맑은 고딕", 10)).pack(anchor="w", pady=(7, 0))
+        tk.Label(header, text="프로젝트와 대화를 한 묶음으로 · Windows 미리보기 버전 0.1.1", bg="#163b35", fg="#c0ded5", font=("맑은 고딕", 10)).pack(anchor="w", pady=(7, 0))
         tabs = ttk.Notebook(self)
         tabs.pack(fill="both", expand=True, padx=22, pady=18)
         export = ttk.Frame(tabs, padding=20)

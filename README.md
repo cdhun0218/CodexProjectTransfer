@@ -1,6 +1,6 @@
 # Codex Project Transfer
 
-Windows에서 프로젝트 파일과 연결된 Codex 대화를 패키지로 만들고, 다른 PC의 새 폴더에 복원하는 **0.1 미리보기 버전**입니다. Python 표준 라이브러리와 Tkinter로 구현했습니다.
+Windows에서 프로젝트 파일과 연결된 Codex 대화를 패키지로 만들고, 다른 PC의 새 폴더에 복원하는 **0.1.1 미리보기 버전**입니다. Python 표준 라이브러리와 Tkinter로 구현했습니다.
 
 ## 실행
 
@@ -66,3 +66,7 @@ Windows용 공식 CPython으로 EXE를 빌드하세요. `build.ps1`은 프로젝
 - [공식 Codex 설정 문서](https://learn.chatgpt.com/docs/config-file/config-advanced): `CODEX_HOME`, 기본 `.codex`, 설정·인증·프로젝트 지침.
 - [공식 Codex CLI 문서](https://learn.chatgpt.com/docs/codex/cli): 저장된 대화의 `codex resume` 재개.
 - 2026-09-18 이 PC의 저장소에서 파일 이름·SQLite 스키마·JSONL 레코드 구조를 읽기 전용으로 확인했습니다. 내부 저장 구조 관련 설명은 이 관찰에 기반하며 공식 호환성 보장이 아닙니다.
+
+## 0.1.1 수정
+
+Windows 확장 경로 접두사 때문에 정상 대화를 외부 경로로 오인하던 문제를 수정했습니다. 오래된 인덱스 경로는 저장소 내부에서 대화 ID가 일치하는 원본 파일을 찾으면 복구합니다. 경로 회귀 테스트를 포함해 14개 테스트를 통과했습니다.

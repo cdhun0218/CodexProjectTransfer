@@ -118,6 +118,37 @@ class TransferTests(unittest.TestCase):
     def test_export_not_inside_project(self):
         with self.assertRaises(ValueError): export_bundle(self.project, self.home, self.project / "bundle.codextransfer")
 
+    def test_extended_windows_index_roundtrip(self):
+        prefix = chr(92) * 2 + '?' + chr(92)
+        with database(self.home / "state_5.sqlite") as c:
+            c.execute("UPDATE threads SET cwd=?, rollout_path=? WHERE id=?",
+                      (prefix + str(self.project), prefix + str(self.rollout), self.sid))
+        sessions, warnings = scan_sessions(self.home, self.project)
+        self.assertEqual(len(sessions), 1)
+        self.assertFalse(warnings)
+        self.export()
+        target = self.root / "extended-restored"
+        restore_bundle(self.package, target)
+        with database(target / "codex/state_5.sqlite") as c:
+            self.assertEqual(c.execute("SELECT cwd FROM threads").fetchone()[0], str(target / "project"))
+
+    def test_stale_index_recovers_from_matching_metadata(self):
+        with database(self.home / "state_5.sqlite") as c:
+            c.execute("UPDATE threads SET rollout_path=? WHERE id=?", (str(self.root / "missing.jsonl"), self.sid))
+        sessions, warnings = scan_sessions(self.home, self.project)
+        self.assertFalse(warnings)
+        self.assertEqual(sessions[0]["path"], str(self.rollout))
+        self.assertEqual(sessions[0]["title"], "대화 제목")
+
+    def test_extended_unc_comparison(self):
+        from transfer_core import belongs
+        slash = chr(92)
+        unc = slash * 2 + 'server' + slash + 'share' + slash + 'home'
+        extended = slash * 2 + '?' + slash + 'UNC' + unc[1:]
+        self.assertTrue(belongs(extended + slash + 'sessions', unc))
+        self.assertFalse(belongs('C:/home-other/file', 'C:/home'))
+        self.assertEqual(remap_cwd(slash * 2 + '?' + slash + 'C:/old/Src', 'C:/old', self.root), str(self.root / 'Src'))
+
 
 if __name__ == "__main__":
     unittest.main()

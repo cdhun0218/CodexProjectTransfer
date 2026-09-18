@@ -25,8 +25,16 @@ def default_home():
     return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
 
 
+def plain_windows_path(path):
+    value = str(path)
+    prefix = chr(92) * 2 + '?' + chr(92)
+    if value[:8].lower() == (prefix + 'UNC' + chr(92)).lower():
+        return chr(92) * 2 + value[8:]
+    return value.removeprefix(prefix)
+
+
 def normalized(path):
-    return ntpath.normcase(ntpath.normpath(str(path).removeprefix("\\\\?\\")))
+    return ntpath.normcase(ntpath.normpath(plain_windows_path(path)))
 
 
 def belongs(path, root):
@@ -76,14 +84,19 @@ def scan_sessions(home, project):
                 if record.get("type") != "session_meta" or not belongs(meta.get("cwd", ""), project):
                     continue
                 sid = str(uuid.UUID(meta.get("id") or meta.get("session_id")))
-                rows.setdefault(sid, {"id": sid, "cwd": meta["cwd"], "title": sid,
+                row = rows.setdefault(sid, {"id": sid, "cwd": meta["cwd"], "title": sid,
                                       "rollout_path": str(path), "archived": folder == "archived_sessions"})
+                # Recover a stale index only from matching session metadata inside this home.
+                indexed = Path(row['rollout_path'])
+                if not indexed.is_file() or not belongs(indexed.resolve(), home) or linked(indexed):
+                    if belongs(path.resolve(), home):
+                        row['rollout_path'] = str(path)
             except (OSError, ValueError, TypeError) as exc:
                 warnings.append(f"대화 파일 읽기 실패: {path.name}: {exc}")
     result = []
     for r in rows.values():
         path = Path(r["rollout_path"])
-        if not path.is_file() or not path.resolve().is_relative_to(home) or linked(path):
+        if not path.is_file() or not belongs(path.resolve(), home) or linked(path):
             warnings.append(f"대화 원본 누락/외부 경로: {r['id']}")
             continue
         uuid.UUID(r["id"])
@@ -267,7 +280,7 @@ def inspect_bundle(path):
 def remap_cwd(value, old, new):
     if not belongs(value, old):
         return value
-    relative = ntpath.relpath(value, old)
+    relative = ntpath.relpath(plain_windows_path(value), plain_windows_path(old))
     return str(Path(new).joinpath(*relative.split("\\"))) if relative != "." else str(new)
 
 
