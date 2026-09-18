@@ -179,7 +179,7 @@ def export_bundle(project, home, output, note="", include_git=False, progress=la
     manifest = {"format": "codex-project-transfer", "version": VERSION,
                 "created_at": datetime.now(timezone.utc).isoformat(), "source_project": str(project),
                 "sessions": [], "files": {}, "excluded": skipped,
-                "limitations": ["로그인·전역 설정·전역 메모리·외부 첨부파일은 제외", "데스크톱 채팅 목록 자동 통합 미지원"]}
+                "limitations": ["로그인·전역 설정·전역 메모리·외부 첨부파일은 제외", "대상 Codex 저장 형식 호환 여부 확인 필요"]}
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="codex-export-", dir=output.parent) as tmp:
         tmp = Path(tmp)

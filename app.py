@@ -3,14 +3,13 @@ import json
 import os
 from pathlib import Path
 import queue
-import shutil
-import subprocess
 import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from transfer_core import default_home, scan_sessions, project_files, export_bundle, inspect_bundle, restore_bundle
+from transfer_core import default_home, scan_sessions, project_files, export_bundle, inspect_bundle
+from desktop_restore import preview_restore, restore_desktop, recover_pending
 
 
 class App(tk.Tk):
@@ -34,7 +33,7 @@ class App(tk.Tk):
         header = tk.Frame(self, bg="#163b35", padx=28, pady=22)
         header.pack(fill="x")
         tk.Label(header, text="Codex Project Transfer", bg="#163b35", fg="white", font=("Segoe UI", 23, "bold")).pack(anchor="w")
-        tk.Label(header, text="프로젝트와 대화를 한 묶음으로 · Windows 미리보기 버전 0.1.1", bg="#163b35", fg="#c0ded5", font=("맑은 고딕", 10)).pack(anchor="w", pady=(7, 0))
+        tk.Label(header, text="프로젝트와 대화를 한 묶음으로 · Windows 미리보기 버전 0.2.0", bg="#163b35", fg="#c0ded5", font=("맑은 고딕", 10)).pack(anchor="w", pady=(7, 0))
         tabs = ttk.Notebook(self)
         tabs.pack(fill="both", expand=True, padx=22, pady=18)
         export = ttk.Frame(tabs, padding=20)
@@ -47,6 +46,7 @@ class App(tk.Tk):
         self.home = tk.StringVar(value=str(default_home()))
         self.bundle = tk.StringVar()
         self.destination = tk.StringVar()
+        self.restore_home = tk.StringVar(value=str(default_home()))
         self.git = tk.BooleanVar(value=True)
         self.path_row(export, "프로젝트 폴더", self.project, "folder")
         self.path_row(export, "Codex 저장소", self.home, "folder")
@@ -62,20 +62,21 @@ class App(tk.Tk):
         ttk.Label(export, text="내보내기 전 관련 Codex 작업을 멈추세요. 패키지는 암호화되지 않으며 대화에 민감한 내용이 포함될 수 있습니다.", wraplength=880).pack(anchor="w", pady=10)
         ttk.Button(export, text="이동 패키지 만들기", style="Accent.TButton", command=self.export).pack(anchor="e")
         self.path_row(restore, "이동 패키지", self.bundle, "file")
-        self.path_row(restore, "새 복원 폴더", self.destination, "destination")
-        ttk.Label(restore, text="새 폴더에 프로젝트와 독립된 Codex 저장소를 만듭니다. 원래 저장소는 유지됩니다.", wraplength=850).pack(anchor="w", pady=10)
+        self.path_row(restore, "복원 상위 폴더", self.destination, "folder")
+        self.path_row(restore, "대상 Codex 저장소", self.restore_home, "folder")
+        ttk.Label(restore, text="선택한 폴더 아래에 원래 프로젝트 이름으로 복원하고 Codex 앱에 채팅을 등록합니다. 복원 전 Codex 앱을 종료하세요.", wraplength=850).pack(anchor="w", pady=10)
         row = ttk.Frame(restore); row.pack(fill="x", pady=8)
         ttk.Button(row, text="패키지 확인", command=self.inspect).pack(side="left")
-        ttk.Button(row, text="검증 후 복원", style="Accent.TButton", command=self.restore).pack(side="right")
+        ttk.Button(row, text="프로젝트 · 앱 채팅 복원", style="Accent.TButton", command=self.restore).pack(side="right")
         ttk.Separator(restore).pack(fill="x", pady=16)
-        ttk.Button(restore, text="복원된 작업 열기", command=self.open_restored).pack(anchor="w")
-        self.restore_label = tk.StringVar(value="복원 후 아래에서 대화를 선택해 이어갈 수 있습니다.")
+        ttk.Button(restore, text="중단된 복원 복구", command=self.recover).pack(anchor="w")
+        self.restore_label = tk.StringVar(value="복원 후 Codex Windows 앱을 다시 열면 프로젝트와 채팅을 확인할 수 있습니다.")
         ttk.Label(restore, textvariable=self.restore_label, wraplength=850).pack(anchor="w", pady=10)
         self.resume_sessions = self.tree(restore, height=6)
         row = ttk.Frame(restore); row.pack(fill="x", pady=12)
-        ttk.Button(row, text="1. 이 저장소에 로그인", command=lambda: self.launch(login=True)).pack(side="left")
-        ttk.Button(row, text="2. 선택 대화 이어가기", style="Accent.TButton", command=self.launch).pack(side="right")
-        ttk.Label(restore, text="Codex CLI가 필요합니다. 이어가기를 누르면 별도 터미널이 열립니다. 데스크톱 앱의 기존 채팅 목록과 자동 통합되지는 않습니다.", wraplength=850).pack(anchor="w")
+        ttk.Button(row, text="프로젝트 폴더 열기", command=self.open_project).pack(side="left")
+        ttk.Button(row, text="Codex 앱에서 대화 열기", style="Accent.TButton", command=self.launch).pack(side="right")
+        ttk.Label(restore, text="기존 채팅과 로그인은 유지됩니다. 같은 ID의 채팅은 새 ID로 복사합니다. 변경 전 백업은 대상 저장소의 transfer-backups에 남깁니다.", wraplength=850).pack(anchor="w")
         info = (
             "무엇이 어디에 저장되나요?\n\n"
             "프로젝트 폴더   소스 코드, 문서, AGENTS.md, 프로젝트별 .codex 설정\n"
@@ -94,8 +95,8 @@ class App(tk.Tk):
             "• 외부 이미지/첨부파일, 다른 경로의 worktree 및 하위 에이전트는 자동 수집하지 않습니다.\n"
             "• 과거 대화 본문에 적힌 옛 경로는 보존됩니다. 새 경로를 Codex에 알려주세요.\n"
             "• 저장 형식은 비공개 내부 구현에 의존합니다. 같은 Codex 버전에서 먼저 시험하세요.\n"
-            "• SQLite 기록은 선택한 대화만 보존하며 복원 시 표시 캐시를 재생성하도록 초기화합니다.\n"
-            "• 공식적인 PC 간 데스크톱 채팅 마이그레이션 도구는 아닙니다.\n\n"
+            "• 프로젝트 등록·대화 원본·대화 인덱스를 대상 앱 저장소에 병합합니다.\n"
+            "• 공식 마이그레이션 규격이 아닌 내부 저장 형식을 사용합니다. 미지원 형식은 중단합니다.\n\n"
             "패키지 가져오기는 신뢰하는 출처의 파일에만 사용하세요.\n"
             "프로젝트 설정·스크립트는 원본대로 포함됩니다. 자동 실행은 하지 않습니다."
         )
@@ -116,8 +117,6 @@ class App(tk.Tk):
                 value = filedialog.askopenfilename(filetypes=[("이동 패키지", "*.codextransfer")])
             else:
                 value = filedialog.askdirectory()
-                if value and kind == "destination":
-                    value = str(Path(value) / "TransferredProject")
             if value: variable.set(value)
         ttk.Button(row, text="찾아보기", command=choose).pack(side="right")
 
@@ -155,7 +154,7 @@ class App(tk.Tk):
             else:
                 self.busy = False; self.bar.stop()
                 if kind == "error":
-                    self.status.set("작업 실패 · 원본은 변경되지 않았습니다.")
+                    self.status.set("작업 실패 · 오류 내용과 복구 안내를 확인하세요.")
                     messagebox.showerror("작업을 완료하지 못했습니다", data)
                 else:
                     self.status.set("완료"); data[0](data[1])
@@ -188,39 +187,41 @@ class App(tk.Tk):
         self.run(lambda: inspect_bundle(path), lambda m: messagebox.showinfo("패키지 정보", f"원본: {m['source_project']}\n생성: {m['created_at']}\n대화: {len(m['sessions'])}개\n파일: {len(m['files'])}개\n제외 항목: {len(m['excluded'])}개\n\n파일 내용의 SHA-256 검증은 복원 시 수행됩니다."))
 
     def restore(self):
-        bundle, destination = self.bundle.get(), self.destination.get()
-        if not bundle or not destination: return messagebox.showinfo("경로 선택", "패키지와 새 복원 폴더를 지정하세요.")
-        self.run(lambda: restore_bundle(bundle, destination, self.report), lambda m: self.load_restored(Path(destination)))
+        bundle, parent, home = self.bundle.get(), self.destination.get(), self.restore_home.get()
+        if not bundle or not parent or not home:
+            return messagebox.showinfo("경로 선택", "패키지, 복원 상위 폴더, 대상 Codex 저장소를 지정하세요.")
+        def reviewed(info):
+            message = (f"프로젝트: {info['project_path']}\n"
+                       f"Codex 저장소: {info['codex_home']}\n"
+                       f"대화 {len(info['manifest']['sessions'])}개 · 중복 ID {len(info['conflicts'])}개는 새 ID로 복사\n\n"
+                       "Codex 앱을 완전히 종료했는지 확인하세요. 기존 채팅은 유지되며 변경 전 자동 백업을 만듭니다. 복원하시겠습니까?")
+            if messagebox.askyesno("복원 내용 확인", message):
+                self.run(lambda: restore_desktop(bundle, parent, home, self.report), self.restored_done)
+        self.run(lambda: preview_restore(bundle, parent, home), reviewed)
 
-    def load_restored(self, path):
-        try:
-            m = json.loads((path / "transfer.json").read_text(encoding="utf-8"))
-            if m.get("format") != "codex-project-transfer" or not (path / "project").is_dir() or not (path / "codex").is_dir():
-                raise ValueError("올바른 복원 폴더가 아닙니다.")
-            if str(path.resolve()) != str(Path(m["restored_to"]).resolve()):
-                raise ValueError("복원 폴더를 이동했습니다. 원본 패키지에서 새 경로로 다시 복원하세요.")
-            self.restored = path
-            self.fill(self.resume_sessions, m["sessions"])
-            self.restore_label.set(str(path / "project"))
-        except Exception as exc: messagebox.showerror("열기 실패", str(exc))
+    def restored_done(self, receipt):
+        self.restored = receipt
+        self.fill(self.resume_sessions, receipt['sessions'])
+        self.restore_label.set(receipt['project_path'])
+        messagebox.showinfo("Codex 앱 복원 완료", f"프로젝트: {receipt['project_path']}\n\nCodex Windows 앱을 다시 실행하면 프로젝트와 채팅이 표시됩니다.\n변경 전 백업: {receipt['backup_path']}")
 
-    def open_restored(self):
-        value = filedialog.askdirectory()
-        if value: self.load_restored(Path(value))
+    def recover(self):
+        home = self.restore_home.get()
+        self.run(lambda: recover_pending(home), lambda results: messagebox.showinfo("복구 완료", f"중단된 복원 {len(results)}건을 되돌렸습니다. 이미 추출된 프로젝트 파일은 보존합니다."))
 
-    def launch(self, login=False):
-        if not self.restored: return messagebox.showinfo("복원 필요", "먼저 복원된 작업을 여세요.")
-        exe = shutil.which("codex.exe") or shutil.which("codex")
-        if not exe or Path(exe).suffix.lower() not in {".exe", ""}:
-            exe = filedialog.askopenfilename(title="Codex CLI 실행 파일 선택", filetypes=[("Codex 실행 파일", "*.exe")])
-        if not exe: return
+    def open_project(self):
+        if not self.restored:
+            return messagebox.showinfo("복원 필요", "먼저 프로젝트를 복원하세요.")
+        os.startfile(self.restored['project_path'])
+
+    def launch(self):
         selection = self.resume_sessions.selection()
-        if not login and not selection: return messagebox.showinfo("대화 선택", "이어갈 대화를 선택하세요.")
-        env = os.environ.copy(); env["CODEX_HOME"] = str(self.restored / "codex")
-        args = [exe, "login"] if login else [exe, "resume", selection[0], "-C", str(self.restored / "project")]
+        if not self.restored or not selection:
+            return messagebox.showinfo("대화 선택", "복원된 대화를 선택하세요.")
         try:
-            subprocess.Popen(args, cwd=self.restored / "project", env=env, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
-        except OSError as exc: messagebox.showerror("실행 실패", str(exc))
+            os.startfile('codex://threads/' + selection[0])
+        except OSError:
+            messagebox.showinfo("Codex 앱 실행", "시작 메뉴에서 Codex Windows 앱을 실행하고 복원된 프로젝트의 채팅을 선택하세요.")
 
     def close(self):
         if self.busy:
